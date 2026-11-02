@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h3>Flow Auto Generator</h3>
+
+  <label for="prompts">Daftar prompt (satu per baris):</label>
+  <textarea id="prompts" rows="8" placeholder="kucing lucu di pantai
+rumah modern di pegunungan
+robot bermain gitar"></textarea>
+
+  <label for="delay">Jeda antar prompt (detik):</label>
+  <input id="delay" type="number" min="5" max="300" value="15" />
+
+  <div class="row">
+    <button id="start">▶ Start</button>
+    <button id="stop">■ Stop</button>
+  </div>
+
+  <p id="status">Idle</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>
