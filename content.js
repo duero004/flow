@@ -1,177 +1,114 @@
+console.log("🚀 Flow Auto: Script berhasil dimuat!");
+
 const SEL = {
   promptInput: 'div.ProseMirror[contenteditable="true"]',
   generateBtn: 'button[aria-label="Start generation"]'
 };
 
 let isRunning = false;
-
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-// Kirim log ke popup (jika popup terbuka)
 const sendLog = (text) => {
+  console.log("📝 LOG:", text);
   try { chrome.runtime.sendMessage({ type: "LOG", text }); } catch (e) {}
 };
 
-function waitForElement(selector, timeout = 10000) {
-  return new Promise((resolve, reject) => {
-    const el = document.querySelector(selector);
-    if (el) return resolve(el);
-
-    const observer = new MutationObserver(() => {
-      const found = document.querySelector(selector);
-      if (found) {
-        observer.disconnect();
-        resolve(found);
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    setTimeout(() => { observer.disconnect(); reject(new Error("Timeout")); }, timeout);
-  });
-}
-
-function waitForButtonEnabled(button, timeout = 15000) {
-  return new Promise((resolve) => {
-    if (!button.disabled && button.getAttribute("aria-disabled") !== "true") {
-      return resolve(true);
-    }
-    const interval = setInterval(() => {
-      if (!button.disabled && button.getAttribute("aria-disabled") !== "true") {
-        clearInterval(interval);
-        resolve(true);
-      }
-    }, 500);
-
-    setTimeout(() => {
-      clearInterval(interval);
-      resolve(false);
-    }, timeout);
-  });
-}
-
-function setPromptText(el, text) {
-  el.focus();
-  el.click();
-
-  const selection = window.getSelection();
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  document.execCommand("delete", false, null);
-
-  try {
-    const dt = new DataTransfer();
-    dt.setData("text/plain", text);
-    const evt = new ClipboardEvent("paste", {
+// Fungsi klik yang lebih "manusiawi" untuk Angular
+function humanClick(element) {
+  const eventNames = ['mousedown', 'mouseup', 'click'];
+  for (const eventName of eventNames) {
+    element.dispatchEvent(new MouseEvent(eventName, {
+      view: window,
       bubbles: true,
       cancelable: true,
-      composed: true,
-      clipboardData: dt
-    });
-    el.dispatchEvent(evt);
-  } catch (e) {
-    document.execCommand("insertText", false, text);
+      buttons: 1
+    }));
   }
-
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-function getMediaUrls() {
-  const urls = new Set();
-  document.querySelectorAll('img, video').forEach(el => {
-    if (el.src && (el.src.startsWith('blob:') || el.src.startsWith('https:'))) {
-      urls.add(el.src);
-    }
-  });
-  return urls;
-}
-
-async function waitForResult(beforeSet, timeout = 120000) {
-  return new Promise((resolve) => {
-    const check = () => {
-      const media = Array.from(document.querySelectorAll('img, video')).reverse();
-      for (let el of media) {
-        if (el.src && !beforeSet.has(el.src) && (el.naturalWidth > 100 || el.videoWidth > 100)) {
-          return el.src;
-        }
-      }
-      return null;
-    };
-
-    const found = check();
-    if (found) return resolve(found);
-
-    const observer = new MutationObserver(() => {
-      const src = check();
-      if (src) { observer.disconnect(); resolve(src); }
-    });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
-
-    setTimeout(() => { observer.disconnect(); resolve(null); }, timeout);
-  });
 }
 
 async function processPrompt(prompt, index, total, config) {
-  sendLog(`[${index + 1}/${total}] Menyiapkan: "${prompt.slice(0, 20)}..."`);
+  sendLog(`Memproses prompt ke-${index + 1}...`);
   
-  const input = await waitForElement(SEL.promptInput);
-  setPromptText(input, prompt);
+  // 1. CARI INPUT
+  const inputs = document.querySelectorAll(SEL.promptInput);
+  if (inputs.length === 0) {
+    sendLog("❌ Gagal: Kotak ketik (ProseMirror) tidak ditemukan di halaman ini!");
+    return;
+  }
+  // Ambil input yang paling terlihat (biasanya yang aktif)
+  let input = inputs[inputs.length - 1]; 
   
-  await sleep(1500);
-
-  const before = getMediaUrls();
+  // Kasih garis merah biar kita tahu itu kotak yang benar
+  input.style.border = "2px solid red";
   
-  const btn = await waitForElement(SEL.generateBtn);
-  sendLog(`[${index + 1}/${total}] Menunggu tombol aktif...`);
-  await waitForButtonEnabled(btn);
+  sendLog("Memasukkan teks...");
+  input.focus();
+  input.click();
   
-  sendLog(`[${index + 1}/${total}] Mengklik Generate...`);
-  btn.click();
-
-  sendLog(`[${index + 1}/${total}] Memproses hasil...`);
-  const resultUrl = await waitForResult(before);
-
-  if (resultUrl) {
-    const isVideo = resultUrl.includes('.mp4') || resultUrl.startsWith('blob:video');
-    const ext = isVideo ? 'mp4' : 'png';
-    const filename = `prompt_${index + 1}_${Date.now()}.${ext}`;
-    
-    chrome.runtime.sendMessage({ type: "DOWNLOAD", url: resultUrl, filename });
-    sendLog(`[${index + 1}/${total}] ✅ Sukses diunduh.`);
-  } else {
-    sendLog(`[${index + 1}/${total}] ⚠️ Gagal deteksi hasil.`);
+  // Trik memasukkan teks paling kasar tapi ampuh
+  document.execCommand("selectAll", false, null);
+  document.execCommand("delete", false, null);
+  
+  // Simulasi ketik manual per karakter (paling aman untuk React/Angular)
+  for (let i = 0; i < prompt.length; i++) {
+    document.execCommand("insertText", false, prompt[i]);
   }
 
-  const jitter = rand(2000, 5000);
-  await sleep((config.delay * 1000) + jitter);
+  // 2. TUNGGU TOMBOL AKTIF
+  sendLog("Menunggu tombol berubah warna (aktif)...");
+  let btn = null;
+  for (let i = 0; i < 20; i++) { // Tunggu maksimal 10 detik
+    btn = document.querySelector(SEL.generateBtn);
+    if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
+      break; 
+    }
+    await sleep(500);
+  }
+
+  if (!btn) {
+    sendLog("❌ Gagal: Tombol Generate tidak ketemu!");
+    return;
+  }
+
+  // Kasih garis hijau biar kita tahu tombol yang benar
+  btn.style.border = "4px solid lime";
+  btn.style.borderRadius = "50%";
+
+  if (btn.disabled) {
+    sendLog("❌ Gagal: Tombol masih disabled! (Teks mungkin tidak masuk ke sistem Google)");
+    return; // Hentikan proses di sini biar ketahuan
+  }
+
+  // 3. KLIK TOMBOL
+  sendLog("✅ Tombol aktif! Mengklik...");
+  humanClick(btn);
+
+  // 4. TUNGGU SELESAI (Kasar: tunggu 20 detik saja)
+  sendLog("Menunggu Google Flow memproses gambar (20 detik)...");
+  await sleep(20000);
+  
+  sendLog(`✅ Prompt ke-${index + 1} selesai, lanjut ke berikutnya.`);
+  await sleep(5000);
 }
 
 async function runQueue(prompts, config) {
   isRunning = true;
-  sendLog(`=== MULAI (${prompts.length} item) ===`);
-
   for (let i = 0; i < prompts.length; i++) {
     if (!isRunning) break;
-
     try {
       await processPrompt(prompts[i], i, prompts.length, config);
     } catch (err) {
-      sendLog(`[${i + 1}] ❌ Error: ${err.message}`);
-      await sleep(3000);
+      sendLog(`❌ Error: ${err.message}`);
     }
   }
-
   isRunning = false;
-  sendLog(`=== SELESAI ===`);
+  sendLog("Antrean selesai.");
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "START_QUEUE") {
     if (isRunning) return;
     runQueue(msg.prompts, msg.config);
   } else if (msg.type === "STOP_QUEUE") {
     isRunning = false;
-    sendLog("Dihentikan...");
   }
 });
