@@ -27,41 +27,31 @@ $("start").addEventListener("click", () => {
       $("status").textContent = "Tab tidak ditemukan.";
       return;
     }
-    const url = tab.url || "";
-    const isValid =
-      url.startsWith("https://labs.google/fx/tools/flow") ||
-      url.startsWith("https://flow.google.com");
-
-    if (!isValid) {
-      $("status").textContent = "Buka dulu halaman Google Flow.";
-      return;
-    }
-
-    chrome.tabs.sendMessage(tab.id, { type: "START", prompts, delay }, () => {
-      if (chrome.runtime.lastError) {
-        $("status").textContent =
-          "Gagal: " + chrome.runtime.lastError.message + " (reload halaman Flow)";
-      }
+    
+    // Kirim perintah ke content.js (tanpa callback agar tidak error)
+    chrome.tabs.sendMessage(tab.id, { 
+      type: "START_QUEUE", 
+      prompts: prompts, 
+      config: { delay: delay, ratio: "16:9", model: "image" }
     });
-    $("status").textContent = `Mengirim ${prompts.length} prompt...`;
+
+    $("status").textContent = `Memproses ${prompts.length} prompt...`;
   });
 });
 
 $("stop").addEventListener("click", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs[0] && tabs[0].id) {
-      chrome.tabs.sendMessage(tabs[0].id, { type: "STOP" }, () => {
-        void chrome.runtime.lastError;
-      });
+      chrome.tabs.sendMessage(tabs[0].id, { type: "STOP_QUEUE" });
     }
   });
   $("status").textContent = "Dihentikan.";
   chrome.storage.local.set({ status: "Dihentikan." });
 });
 
-// Update status real-time
+// Update status dari content.js
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "PROGRESS") {
+  if (msg.type === "LOG") {
     $("status").textContent = msg.text;
     chrome.storage.local.set({ status: msg.text });
   }
