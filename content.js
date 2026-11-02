@@ -1,20 +1,14 @@
 // ============================================================
-// SELECTOR TERVERIFIKASI (labs.google + flow.google.com)
+// SELECTOR BERDASARKAN HTML ASLI DARI USER
 // ============================================================
-const PROMPT_INPUT_SELECTORS = [
-  'div[role="textbox"][data-slate-editor="true"]', // labs (Slate)
-  'div.ProseMirror[contenteditable="true"]',       // flow.google.com
-  '[contenteditable="true"][role="textbox"]',
-  '[contenteditable="true"]'
-];
+const SEL = {
+  // Input pakai ProseMirror
+  promptInput: 'div.ProseMirror[contenteditable="true"]',
+  // Tombol generate sangat spesifik
+  generateBtn: 'button[aria-label="Start generation"]'
+};
 
-const GENERATE_BUTTON_SELECTORS = [
-  'button:has(mat-icon:text-is("arrow_forward"))',
-  'button:has(i.google-symbols:text-is("arrow_forward"))',
-  'button:has([class*="arrow_forward"])'
-];
-
-let running = false;
+let isRunning = false;
 
 // ============================================================
 // UTILITY
@@ -22,65 +16,65 @@ let running = false;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-function sendProgress(text) {
-  try {
-    chrome.runtime.sendMessage({ type: "PROGRESS", text });
-  } catch (e) { /* popup mungkin tertutup */ }
-}
+const sendLog = (text) => {
+  try { chrome.runtime.sendMessage({ type: "LOG", text }); } catch (e) {}
+};
 
-function pickElement(selectors) {
-  for (const sel of selectors) {
-    try {
-      const el = document.querySelector(sel);
-      if (el) return el;
-    } catch (e) {
-      // selector tidak valid di browser ini, lanjut
-    }
-  }
-  return null;
-}
-
-function waitForElement(selectors, timeout = 30000) {
+// Menunggu elemen muncul
+function waitForElement(selector, timeout = 10000) {
   return new Promise((resolve, reject) => {
-    const found = pickElement(selectors);
-    if (found) return resolve(found);
+    const el = document.querySelector(selector);
+    if (el) return resolve(el);
 
     const observer = new MutationObserver(() => {
-      const el = pickElement(selectors);
-      if (el) {
+      const found = document.querySelector(selector);
+      if (found) {
         observer.disconnect();
-        resolve(el);
+        resolve(found);
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => { observer.disconnect(); reject(new Error("Timeout")); }, timeout);
+  });
+}
+
+// Menunggu tombol berubah dari disabled ke enabled
+function waitForButtonEnabled(button, timeout = 15000) {
+  return new Promise((resolve) => {
+    if (!button.disabled && button.getAttribute("aria-disabled") !== "true") {
+      return resolve(true);
+    }
+    const interval = setInterval(() => {
+      // Cek apakah atribut disabled hilang
+      if (!button.disabled && button.getAttribute("aria-disabled") !== "true") {
+        clearInterval(interval);
+        resolve(true);
+      }
+    }, 500);
 
     setTimeout(() => {
-      observer.disconnect();
-      reject(new Error("Timeout menunggu elemen"));
+      clearInterval(interval);
+      resolve(false); // Timeout, anggap saja tetap bisa diklik
     }, timeout);
   });
 }
 
-// ============================================================
-// INPUT PROMPT (Slate & ProseMirror kompatibel)
-// ============================================================
+// Memasukkan teks ke dalam ProseMirror
 function setPromptText(el, text) {
   el.focus();
   el.click();
 
-  // Pilih semua isi lama & hapus
-  try {
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    document.execCommand("delete", false, null);
-  } catch (e) { /* ignore */ }
+  // Hapus teks lama (jika ada)
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  document.execCommand("delete", false, null);
 
-  // Cara 1: simulasi paste
-  let inserted = false;
+  // Masukkan teks baru
   try {
+    // Trik 1: Simulasi Paste (paling aman untuk Angular/ProseMirror)
     const dt = new DataTransfer();
     dt.setData("text/plain", text);
     const evt = new ClipboardEvent("paste", {
@@ -90,50 +84,36 @@ function setPromptText(el, text) {
       clipboardData: dt
     });
     el.dispatchEvent(evt);
-    inserted = (el.textContent || "").includes(text.slice(0, 10));
-  } catch (e) { /* fallback */ }
-
-  // Cara 2: execCommand
-  if (!inserted) {
-    try {
-      document.execCommand("insertText", false, text);
-      inserted = (el.textContent || "").includes(text.slice(0, 10));
-    } catch (e) { /* fallback */ }
+  } catch (e) {
+    // Trik 2: Fallback ketik manual
+    document.execCommand("insertText", false, text);
   }
 
-  // Cara 3: ketik manual per karakter (paling lambat tapi paling tahan)
-  if (!inserted) {
-    for (const ch of text) {
-      el.dispatchEvent(new InputEvent("beforeinput", {
-        bubbles: true, cancelable: true, inputType: "insertText", data: ch
-      }));
-      document.execCommand("insertText", false, ch);
-    }
-  }
-
-  // Pastikan event input terkirim (React listener)
+  // Pastikan event input terkirim agar Angular tahu isinya berubah
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 // ============================================================
-// DETEKSI GAMBAR HASIL
+// DETEKSI GAMBAR / VIDEO BARU
 // ============================================================
-function snapshotImages() {
-  return new Set(
-    Array.from(document.querySelectorAll("img"))
-      .map((img) => img.src)
-      .filter((s) => s && (s.startsWith("blob:") || s.startsWith("https:")))
-  );
+function getMediaUrls() {
+  const urls = new Set();
+  document.querySelectorAll('img, video').forEach(el => {
+    if (el.src && (el.src.startsWith('blob:') || el.src.startsWith('https:'))) {
+      urls.add(el.src);
+    }
+  });
+  return urls;
 }
 
-async function waitForNewImage(beforeSet, timeout = 90000) {
+async function waitForResult(beforeSet, timeout = 120000) {
   return new Promise((resolve) => {
     const check = () => {
-      const imgs = Array.from(document.querySelectorAll("img"));
-      for (let i = imgs.length - 1; i >= 0; i--) {
-        const src = imgs[i].src;
-        if (src && !beforeSet.has(src) && imgs[i].naturalWidth > 100) {
-          return imgs[i];
+      const media = Array.from(document.querySelectorAll('img, video')).reverse();
+      for (let el of media) {
+        // Pastikan gambar punya ukuran (bukan ikon kecil)
+        if (el.src && !beforeSet.has(el.src) && (el.naturalWidth > 100 || el.videoWidth > 100)) {
+          return el.src;
         }
       }
       return null;
@@ -143,103 +123,104 @@ async function waitForNewImage(beforeSet, timeout = 90000) {
     if (found) return resolve(found);
 
     const observer = new MutationObserver(() => {
-      const img = check();
-      if (img) {
-        observer.disconnect();
-        clearTimeout(timer);
-        resolve(img);
-      }
+      const src = check();
+      if (src) { observer.disconnect(); resolve(src); }
     });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["src"]
-    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
 
-    const timer = setTimeout(() => {
-      observer.disconnect();
-      resolve(null);
-    }, timeout);
+    setTimeout(() => { observer.disconnect(); resolve(null); }, timeout);
   });
 }
 
 // ============================================================
-// ALUR UTAMA
+// LOGIKA UTAMA GENERATE
 // ============================================================
-async function processPrompt(prompt, index, total, delaySec) {
-  sendProgress(`[${index + 1}/${total}] Mengisi: "${prompt.slice(0, 40)}..."`);
-
-  const input = await waitForElement(PROMPT_INPUT_SELECTORS, 20000);
+async function processPrompt(prompt, index, total, config) {
+  sendLog(`[${index + 1}/${total}] Menyiapkan: "${prompt.slice(0, 30)}..."`);
+  
+  // 1. Isi Prompt
+  const input = await waitForElement(SEL.promptInput);
   setPromptText(input, prompt);
-  await sleep(rand(800, 1200));
+  
+  // 2. Tunggu sebentar agar UI bereaksi
+  await sleep(1500);
 
-  const btn = await waitForElement(GENERATE_BUTTON_SELECTORS, 10000);
-  if (!btn) throw new Error("Tombol Generate tidak ditemukan");
-
-  // Cek tombol tidak disabled
-  if (btn.disabled || btn.getAttribute("aria-disabled") === "true") {
-    throw new Error("Tombol Generate masih disabled (prompt kosong?)");
-  }
-
-  const before = snapshotImages();
+  // 3. Ambil snapshot media sebelum generate
+  const before = getMediaUrls();
+  
+  // 4. Klik Generate
+  const btn = await waitForElement(SEL.generateBtn);
+  sendLog(`[${index + 1}/${total}] Menunggu tombol aktif...`);
+  await waitForButtonEnabled(btn);
+  
+  sendLog(`[${index + 1}/${total}] Mengklik tombol Generate...`);
   btn.click();
 
-  sendProgress(`[${index + 1}/${total}] Menunggu hasil generate...`);
+  // 5. Tunggu hasil render
+  sendLog(`[${index + 1}/${total}] Menunggu hasil (bisa memakan waktu)...`);
+  const resultUrl = await waitForResult(before);
 
-  // Tunggu gambar baru muncul
-  const img = await waitForNewImage(before, Math.max(90000, delaySec * 3000));
-
-  if (img && img.src) {
-    const filename = `flow_${String(index + 1).padStart(3, "0")}_${Date.now()}.png`;
-    chrome.runtime.sendMessage({
-      type: "DOWNLOAD",
-      url: img.src,
-      filename
-    });
-    sendProgress(`[${index + 1}/${total}] ✅ Diunduh: ${filename}`);
+  if (resultUrl) {
+    const isVideo = resultUrl.includes('.mp4') || resultUrl.startsWith('blob:video');
+    const ext = isVideo ? 'mp4' : 'png';
+    const filename = `prompt_${index + 1}_${Date.now()}.${ext}`;
+    
+    chrome.runtime.sendMessage({ type: "DOWNLOAD", url: resultUrl, filename });
+    sendLog(`[${index + 1}/${total}] ✅ Berhasil diunduh: ${filename}`);
   } else {
-    sendProgress(`[${index + 1}/${total}] ⚠️ Gambar tidak terdeteksi, lanjut.`);
+    sendLog(`[${index + 1}/${total}] ⚠️ Timeout, gambar tidak terdeteksi.`);
   }
 
-  // Jeda antar prompt (acak agar natural, hindari reCAPTCHA)
+  // 6. Jeda acak sebelum prompt berikutnya agar aman dari limit
   const jitter = rand(2000, 5000);
-  await sleep(delaySec * 1000 + jitter);
+  sendLog(`[${index + 1}/${total}] Istirahat ${config.delay + Math.floor(jitter/1000)} detik...`);
+  await sleep((config.delay * 1000) + jitter);
 }
 
-async function runBatch(prompts, delaySec) {
-  running = true;
-  sendProgress(`Mulai ${prompts.length} prompt...`);
+// ============================================================
+// KONTROL ANTREAN
+// ============================================================
+async function runQueue(prompts, config) {
+  isRunning = true;
+  sendLog(`=== MULAI BATCH (${prompts.length} item) ===`);
 
   for (let i = 0; i < prompts.length; i++) {
-    if (!running) break;
-    try {
-      await processPrompt(prompts[i], i, prompts.length, delaySec);
-    } catch (e) {
-      console.error(e);
-      sendProgress(`[${i + 1}/${prompts.length}] ❌ Error: ${e.message}`);
-      await sleep(3000);
+    if (!isRunning) break;
+
+    let attempts = 0;
+    const maxRetries = 2; // Coba 2x jika gagal
+    let success = false;
+
+    while (attempts < maxRetries && !success && isRunning) {
+      try {
+        await processPrompt(prompts[i], i, prompts.length, config);
+        success = true;
+      } catch (err) {
+        attempts++;
+        sendLog(`[${i + 1}/${prompts.length}] ❌ Error: ${err.message}`);
+        if (attempts < maxRetries) {
+          sendLog(`Mencoba ulang...`);
+          await sleep(5000);
+        }
+      }
     }
   }
 
-  running = false;
-  sendProgress(running ? "Dihentikan." : "✅ Selesai semua.");
+  isRunning = false;
+  sendLog(`=== ANTREAN SELESAI / DIHENTIKAN ===`);
 }
 
 // ============================================================
-// LISTENER DARI POPUP
+// LISTENER
 // ============================================================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "START") {
-    if (running) {
-      sendProgress("Masih berjalan, tunggu selesai atau klik Stop.");
-      return;
-    }
-    runBatch(msg.prompts, msg.delay);
+  if (msg.type === "START_QUEUE") {
+    if (isRunning) return sendLog("Antrean sedang berjalan!");
+    runQueue(msg.prompts, msg.config);
     sendResponse({ ok: true });
-  } else if (msg.type === "STOP") {
-    running = false;
-    sendProgress("Dihentikan oleh pengguna.");
+  } else if (msg.type === "STOP_QUEUE") {
+    isRunning = false;
+    sendLog("Sinyal berhenti diterima...");
     sendResponse({ ok: true });
   }
   return true;
