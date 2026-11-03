@@ -1,4 +1,4 @@
-console.log("🚀 Flow Auto Final Aktif!");
+console.log("🚀 Flow Auto v9 (Robust Selector) Aktif!");
 
 let isRunning = false;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -7,26 +7,43 @@ const sendLog = (text) => {
 };
 
 async function prosesKlik(prompt, index) {
-  sendLog(`Memproses: "${prompt.slice(0, 15)}..."`);
+  sendLog(`Memproses: "${prompt.slice(0, 20)}..."`);
 
-  const inputEl = document.querySelector('div[role="textbox"][aria-label="What do you want to change?"]');
-  if (!inputEl) return sendLog("❌ Kotak input tidak ketemu. Buka project Flow!");
+  // CARI KOTAK INPUT (Pakai selector yang lebih longgar)
+  let inputEl = document.querySelector('.ProseMirror') || document.querySelector('div[role="textbox"]');
+  
+  // Kalau belum ketemu, tunggu 3 detik
+  if (!inputEl) {
+    sendLog("Menunggu kotak input muncul...");
+    await sleep(3000);
+    inputEl = document.querySelector('.ProseMirror') || document.querySelector('div[role="textbox"]');
+  }
 
+  if (!inputEl) {
+    return sendLog("❌ Kotak input benar-benar tidak ada. Pastikan kursor di dalam project Flow!");
+  }
+
+  // Kasih garis merah biar lu tau kotaknya udah ketemu
+  inputEl.style.border = "3px solid red";
+  
+  // Masukkan teks
   inputEl.focus();
   inputEl.click();
   document.execCommand("selectAll", false, null);
   document.execCommand("delete", false, null);
   
-  // Trik Ketik Manusia
   for (let i = 0; i < prompt.length; i++) {
     document.execCommand("insertText", false, prompt[i]);
-    await sleep(15); 
+    await sleep(10); // Ketik per karakter kayak manusia
   }
 
-  let btn = document.querySelector('button[aria-label="Start generation"]');
+  let btn = null;
   let isReady = false;
+  
+  sendLog("Menunggu tombol aktif...");
   for (let i = 0; i < 20; i++) {
-    btn = document.querySelector('button[aria-label="Start generation"]');
+    // Selector tombol juga dibuat lebih longgar
+    btn = document.querySelector('button[aria-label="Start generation"]') || document.querySelector('button[type="submit"]');
     if (btn && !btn.hasAttribute("disabled")) { isReady = true; break; }
     await sleep(500);
   }
@@ -37,7 +54,7 @@ async function prosesKlik(prompt, index) {
   }
 
   btn.style.border = "4px solid lime"; 
-  sendLog("✅ Tombol aktif! Mencoba klik...");
+  sendLog("✅ Tombol aktif! Nge-klik...");
 
   const opts = { bubbles: true, cancelable: true, view: window, buttons: 1 };
   btn.dispatchEvent(new PointerEvent('pointerdown', opts));
@@ -46,8 +63,8 @@ async function prosesKlik(prompt, index) {
   btn.dispatchEvent(new MouseEvent('mouseup', opts));
   btn.dispatchEvent(new MouseEvent('click', opts));
 
-  sendLog("🚀 Klik terkirim!");
-  await sleep(15000); 
+  sendLog("🚀 Klik terkirim! Nunggu proses...");
+  await sleep(20000); 
 }
 
 async function runQueue(prompts) {
@@ -57,7 +74,7 @@ async function runQueue(prompts) {
     await prosesKlik(prompts[i], i);
   }
   isRunning = false;
-  sendLog("🏁 Selesai.");
+  sendLog("🏁 Antrean selesai.");
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
