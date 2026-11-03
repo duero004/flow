@@ -1,45 +1,43 @@
-const $ = (id) => document.getElementById(id);
-const logBox = $("log-box");
-const progressBar = $("progress-bar");
+document.addEventListener("DOMContentLoaded", () => {
+  const startBtn = document.getElementById("start");
+  const stopBtn = document.getElementById("stop");
+  const logBox = document.getElementById("log-box");
 
-function addLog(text) {
-  logBox.innerText = `> ${text}\n` + logBox.innerText;
-}
-
-$("start").addEventListener("click", () => {
-  const prompts = $("prompts").value.split("\n").map(s => s.trim()).filter(Boolean);
-  if (prompts.length === 0) return addLog("Error: Prompt kosong.");
-  
-  const config = {
-    delay: parseInt($("delay").value) || 15,
-    mode: $("mode").value
-  };
-
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    if (!tab || !tab.url.includes("google.com")) {
-      return addLog("Error: Buka halaman Google Flow dulu!");
-    }
-
-    chrome.tabs.sendMessage(tab.id, { type: "START", prompts, config }, () => {
-      if (chrome.runtime.lastError) {
-        addLog("Error: Reload halaman Flow (F5) dulu!");
-      }
-    });
-  });
-});
-
-$("stop").addEventListener("click", () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { type: "STOP" });
-  });
-});
-
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "LOG") {
-    addLog(msg.text);
-    if (msg.progress) {
-      progressBar.style.width = `${msg.progress}%`;
-    }
+  function addLog(text) {
+    if (logBox) logBox.innerText = `> ${text}\n` + logBox.innerText;
   }
+
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      const promptText = document.getElementById("prompts").value;
+      const prompts = promptText.split("\n").map(s => s.trim()).filter(Boolean);
+      
+      if (prompts.length === 0) return addLog("Error: Prompt kosong bro!");
+      
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs[0]) return addLog("Error: Tab nggak ketemu.");
+        
+        chrome.tabs.sendMessage(tabs[0].id, { type: "START", prompts: prompts }, (res) => {
+          if (chrome.runtime.lastError) {
+             addLog("Error: Buka/Refresh (F5) Google Flow dulu!");
+          } else {
+             addLog(`Mengirim ${prompts.length} prompt...`);
+          }
+        });
+      });
+    });
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener("click", () => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { type: "STOP" });
+      });
+      addLog("Dihentikan.");
+    });
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === "LOG") addLog(msg.text);
+  });
 });
