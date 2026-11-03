@@ -1,4 +1,4 @@
-console.log("🚀 Flow Auto: Script v3 dimuat!");
+console.log("🚀 Flow Auto Pro (v4 - Final Bypass) Aktif");
 
 const SEL = {
   promptInput: 'div.ProseMirror[contenteditable="true"]',
@@ -7,17 +7,75 @@ const SEL = {
 
 let isRunning = false;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const sendLog = (text) => {
-  console.log("📝 LOG:", text);
-  try { chrome.runtime.sendMessage({ type: "LOG", text }); } catch (e) {}
+const sendLog = (text, progress = null) => {
+  try { chrome.runtime.sendMessage({ type: "LOG", text, progress }); } catch (e) {}
 };
 
+// ==========================================
+// TRIK KLIK PAKSAAN (BYPASS ANGULAR)
+// ==========================================
+function forceClick(element) {
+  const opts = { bubbles: true, cancelable: true, view: window, buttons: 1 };
+  
+  // Tembak 5 event sekaligus
+  element.dispatchEvent(new PointerEvent('pointerdown', opts));
+  element.dispatchEvent(new MouseEvent('mousedown', opts));
+  element.dispatchEvent(new PointerEvent('pointerup', opts));
+  element.dispatchEvent(new MouseEvent('mouseup', opts));
+  element.dispatchEvent(new MouseEvent('click', opts));
+  
+  // Kalau ada form, paksa submit
+  if (element.form) element.form.requestSubmit();
+}
+
+// ==========================================
+// DETEKSI GAMBAR BARU
+// ==========================================
+function getMediaUrls() {
+  const urls = new Set();
+  document.querySelectorAll('img, video').forEach(el => {
+    if (el.src && (el.src.startsWith('blob:') || el.src.startsWith('https:'))) {
+      urls.add(el.src);
+    }
+  });
+  return urls;
+}
+
+async function waitForResult(beforeSet, timeout = 120000) {
+  return new Promise((resolve) => {
+    const check = () => {
+      const media = Array.from(document.querySelectorAll('img, video')).reverse();
+      for (let el of media) {
+        if (el.src && !beforeSet.has(el.src) && (el.naturalWidth > 100 || el.videoWidth > 100)) {
+          return el.src;
+        }
+      }
+      return null;
+    };
+
+    const found = check();
+    if (found) return resolve(found);
+
+    const observer = new MutationObserver(() => {
+      const src = check();
+      if (src) { observer.disconnect(); resolve(src); }
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+
+    setTimeout(() => { observer.disconnect(); resolve(null); }, timeout);
+  });
+}
+
+// ==========================================
+// PROSES UTAMA
+// ==========================================
 async function processPrompt(prompt, index, total, config) {
-  sendLog(`[${index + 1}/${total}] Memasukkan teks...`);
+  const pct = Math.round((index / total) * 100);
+  sendLog(`Memproses [${index + 1}/${total}]: "${prompt.slice(0, 15)}..."`, pct);
   
   const inputs = document.querySelectorAll(SEL.promptInput);
-  let input = inputs[inputs.length - 1]; 
-  input.style.border = "2px solid red";
+  if (!inputs.length) throw new Error("Kotak input tidak ditemukan");
+  const input = inputs[inputs.length - 1]; 
   
   input.focus();
   input.click();
@@ -28,60 +86,45 @@ async function processPrompt(prompt, index, total, config) {
   for (let i = 0; i < prompt.length; i++) {
     document.execCommand("insertText", false, prompt[i]);
   }
+  input.dispatchEvent(new Event("input", { bubbles: true }));
 
-  sendLog("Menunggu tombol aktif...");
+  sendLog("Menunggu tombol aktif...", pct);
   let btn = null;
   for (let i = 0; i < 20; i++) {
     btn = document.querySelector(SEL.generateBtn);
-    if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
-      break; 
-    }
+    if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") break;
     await sleep(500);
   }
 
-  if (!btn || btn.disabled) {
-    sendLog("❌ Tombol masih disabled. Teks gagal masuk.");
-    return;
-  }
+  if (!btn || btn.disabled) throw new Error("Tombol tetap disabled");
 
-  btn.style.border = "4px solid lime";
-  sendLog("✅ Mengklik tombol...");
-  
-  // TRIK BARU: Paksa klik pakai beberapa metode
-  btn.focus();
-  btn.click(); // Metode 1: Klik standar
-  
-  // Metode 2: Jika Angular masih bandel, tembak pakai tombol Enter
-  await sleep(1000); 
-  if (document.querySelector(SEL.generateBtn)) { // Jika tombol masih ada (belum jadi stop)
-      sendLog("Mencoba alternatif (Tekan Enter)...");
-      const enterEvent = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true });
-      input.dispatchEvent(enterEvent);
-  }
+  // Ambil snapshot gambar sebelum generate
+  const beforeSet = getMediaUrls();
 
-  // Deteksi apakah proses dimulai (Tombol berubah jadi Stop / ada loading)
-  sendLog("Menunggu proses selesai...");
-  let isGenerating = false;
+  sendLog("Memicu Generate (Force Click)...", pct);
+  forceClick(btn);
   
-  // Cek maksimal 10 detik apakah tombol berubah jadi stop/loading
-  for (let i = 0; i < 20; i++) {
-      const currentBtn = document.querySelector(SEL.generateBtn);
-      // Kalau aria-label-nya berubah atau tombolnya hilang/disabled, berarti sukses mulai
-      if (!currentBtn || currentBtn.disabled || currentBtn.getAttribute("aria-label") !== "Start generation") {
-          isGenerating = true;
-          break;
-      }
-      await sleep(500);
-  }
+  // Fallback Enter
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
 
-  if (isGenerating) {
-      sendLog(`✅ Generate dimulai! Menunggu 15 detik...`);
-      await sleep(15000); // Tunggu gambar selesai
+  sendLog("Menunggu hasil render...", pct);
+  const resultUrl = await waitForResult(beforeSet);
+
+  if (resultUrl) {
+    const isVideo = resultUrl.includes('.mp4') || resultUrl.startsWith('blob:video');
+    const ext = isVideo ? 'mp4' : 'png';
+    const filename = `prompt_${index + 1}_${Date.now()}.${ext}`;
+    
+    // Kirim perintah download ke background.js
+    chrome.runtime.sendMessage({ type: "DOWNLOAD", url: resultUrl, filename });
+    sendLog(`✅ Sukses diunduh!`, pct);
   } else {
-      sendLog(`⚠️ Gagal memicu generate.`);
+    sendLog(`⚠️ Gagal deteksi gambar.`, pct);
   }
 
-  await sleep(3000);
+  // Jeda sebelum prompt berikutnya
+  const jitter = Math.floor(Math.random() * 3000) + 2000;
+  await sleep((config.delay * 1000) + jitter);
 }
 
 async function runQueue(prompts, config) {
@@ -91,18 +134,21 @@ async function runQueue(prompts, config) {
     try {
       await processPrompt(prompts[i], i, prompts.length, config);
     } catch (err) {
-      sendLog(`❌ Error: ${err.message}`);
+      sendLog(`❌ Error: ${err.message}`, Math.round((i / prompts.length) * 100));
+      await sleep(3000);
     }
   }
   isRunning = false;
-  sendLog("Antrean selesai.");
+  sendLog("🏁 Antrean selesai.", 100);
 }
 
+// Listener untuk UI Neo-Brutalism
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "START_QUEUE") {
-    if (isRunning) return;
+  if (msg.type === "START") {
+    if (isRunning) return sendLog("Antrean sedang berjalan!");
     runQueue(msg.prompts, msg.config);
-  } else if (msg.type === "STOP_QUEUE") {
+  } else if (msg.type === "STOP") {
     isRunning = false;
+    sendLog("Sistem dihentikan pengguna.");
   }
 });
