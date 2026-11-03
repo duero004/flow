@@ -1,4 +1,4 @@
-document.addEventListener("DOMContentLoaded", () => {
+ddocument.addEventListener("DOMContentLoaded", () => {
   const startBtn = document.getElementById("start");
   const stopBtn = document.getElementById("stop");
   const logBox = document.getElementById("log-box");
@@ -10,7 +10,10 @@ document.addEventListener("DOMContentLoaded", () => {
   if (startBtn) {
     startBtn.addEventListener("click", () => {
       const promptText = document.getElementById("prompts").value;
-      const prompts = promptText.split("\n").map(s => s.trim()).filter(Boolean);
+      
+      // KITA UBAH CARA PECAHNYA: Pakai pemisah "---" bukan enter (\n)
+      // Kalau nggak ada "---", semua teks dianggap 1 prompt utuh.
+      const prompts = promptText.split("---").map(s => s.trim()).filter(Boolean);
       
       if (prompts.length === 0) return addLog("Error: Prompt kosong bro!");
       
@@ -19,7 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
         chrome.tabs.sendMessage(tabs[0].id, { type: "START", prompts: prompts }, (res) => {
           if (chrome.runtime.lastError) {
-             addLog("Error: Buka/Refresh (F5) Google Flow dulu!");
+             addLog("Error: Refresh (F5) Google Flow dulu!");
           } else {
              addLog(`Mengirim ${prompts.length} prompt...`);
           }
