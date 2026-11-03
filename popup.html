@@ -5,23 +5,25 @@
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <h3>Flow Auto Generator</h3>
-
-  <label for="prompts">Daftar prompt (satu per baris):</label>
-  <textarea id="prompts" rows="8" placeholder="kucing lucu di pantai
-rumah modern di pegunungan
-robot bermain gitar"></textarea>
-
-  <label for="delay">Jeda antar prompt (detik):</label>
-  <input id="delay" type="number" min="5" max="300" value="15" />
-
-  <div class="row">
-    <button id="start">▶ Start</button>
-    <button id="stop">■ Stop</button>
+  <div class="header">
+    <h1>FLOW AUTO<br><span class="badge">PRO</span></h1>
   </div>
 
-  <p id="status">Idle</p>
+  <div class="container">
+    <label>// ANTREAN PROMPT</label>
+    <textarea id="prompts" rows="4" placeholder="kucing lucu...&#10;robot main gitar..."></textarea>
 
+    <label>// JEDA (DETIK)</label>
+    <input type="number" id="delay" value="15" min="5" max="120">
+
+    <div class="actions">
+      <button id="start">▶ START</button>
+      <button id="stop">■ STOP</button>
+    </div>
+
+    <label>// TERMINAL LOG</label>
+    <div id="log-box" class="terminal">> System ready...</div>
+  </div>
   <script src="popup.js"></script>
 </body>
 </html>
