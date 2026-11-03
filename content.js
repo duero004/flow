@@ -1,4 +1,4 @@
-console.log("🚀 Flow Auto v7 (Final Clicker) Aktif!");
+console.log("🚀 Flow Auto Final Aktif!");
 
 let isRunning = false;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -7,55 +7,38 @@ const sendLog = (text) => {
 };
 
 async function prosesKlik(prompt, index) {
-  sendLog(`Memproses prompt ke-${index + 1}...`);
+  sendLog(`Memproses: "${prompt.slice(0, 15)}..."`);
 
-  // 1. CARI KOTAK KETIK
   const inputEl = document.querySelector('div[role="textbox"][aria-label="What do you want to change?"]');
-  if (!inputEl) {
-    sendLog("❌ Input kotak ketik nggak ketemu!");
-    return;
-  }
+  if (!inputEl) return sendLog("❌ Kotak input tidak ketemu. Buka project Flow!");
 
-  // 2. MASUKKIN TEKS
   inputEl.focus();
   inputEl.click();
   document.execCommand("selectAll", false, null);
   document.execCommand("delete", false, null);
   
-  // Ketik per karakter biar sistem Flow sadar
+  // Trik Ketik Manusia
   for (let i = 0; i < prompt.length; i++) {
     document.execCommand("insertText", false, prompt[i]);
+    await sleep(15); 
   }
-  inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-  
-  sendLog("✅ Teks masuk. Nunggu tombol nyala...");
 
-  // 3. TUNGGU TOMBOL JADI AKTIF (Atribut disabled hilang)
-  let btn = null;
+  let btn = document.querySelector('button[aria-label="Start generation"]');
   let isReady = false;
-
   for (let i = 0; i < 20; i++) {
     btn = document.querySelector('button[aria-label="Start generation"]');
-    
-    // Cek apakah tombol sudah tidak disabled
-    if (btn && !btn.hasAttribute("disabled")) {
-      isReady = true;
-      break;
-    }
+    if (btn && !btn.hasAttribute("disabled")) { isReady = true; break; }
     await sleep(500);
   }
 
   if (!isReady || !btn) {
-    sendLog("❌ Gagal: Tombol tetap redup (disabled). Teks ditolak Angular!");
-    if (btn) btn.style.border = "4px solid red"; // Tanda gagal
-    return;
+    if (btn) btn.style.border = "4px solid red";
+    return sendLog("❌ Gagal: Tombol tetap mati (disabled).");
   }
 
-  // 4. KLIK TOMBOLNYA!
-  btn.style.border = "4px solid lime"; // Tanda siap klik
-  sendLog("✅ Tombol menyala hijau! Mencoba klik...");
+  btn.style.border = "4px solid lime"; 
+  sendLog("✅ Tombol aktif! Mencoba klik...");
 
-  // Tembak semua event mouse yang mungkin ditunggu Angular
   const opts = { bubbles: true, cancelable: true, view: window, buttons: 1 };
   btn.dispatchEvent(new PointerEvent('pointerdown', opts));
   btn.dispatchEvent(new MouseEvent('mousedown', opts));
@@ -63,11 +46,8 @@ async function prosesKlik(prompt, index) {
   btn.dispatchEvent(new MouseEvent('mouseup', opts));
   btn.dispatchEvent(new MouseEvent('click', opts));
 
-  sendLog("🚀 Klik terkirim! Silakan lihat layar Flow, apakah loading muter?");
-  
-  // Jeda 20 detik buat kasih waktu lu lihat hasilnya di layar
-  await sleep(20000); 
-  sendLog(`✅ Prompt ${index + 1} selesai diproses.`);
+  sendLog("🚀 Klik terkirim!");
+  await sleep(15000); 
 }
 
 async function runQueue(prompts) {
@@ -77,14 +57,10 @@ async function runQueue(prompts) {
     await prosesKlik(prompts[i], i);
   }
   isRunning = false;
-  sendLog("🏁 Semua antrean selesai.");
+  sendLog("🏁 Selesai.");
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "START") {
-    if (isRunning) return;
-    runQueue(msg.prompts);
-  } else if (msg.type === "STOP") {
-    isRunning = false;
-  }
+  if (msg.type === "START") { if (!isRunning) runQueue(msg.prompts); }
+  if (msg.type === "STOP") { isRunning = false; }
 });
