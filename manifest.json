@@ -2,15 +2,15 @@
   "manifest_version": 3,
   "name": "Flow Auto Generator",
   "version": "1.0.0",
-  "description": "Otomatisasi generate gambar di Google Flow",
-  "permissions": ["storage", "downloads", "activeTab", "scripting"],
+  "description": "Otomatisasi Google Flow",
+  "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://labs.google/*",
     "https://flow.google.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Flow Auto Generator"
+    "default_title": "Flow Auto"
   },
   "content_scripts": [
     {
@@ -21,8 +21,5 @@
       "js": ["content.js"],
       "run_at": "document_idle"
     }
-  ],
-  "background": {
-    "service_worker": "background.js"
-  }
+  ]
 }
