@@ -1,58 +1,45 @@
 const $ = (id) => document.getElementById(id);
+const logBox = $("log-box");
+const progressBar = $("progress-bar");
 
-// Muat state terakhir
-chrome.storage.local.get(["prompts", "delay", "status"], (data) => {
-  if (data.prompts) $("prompts").value = data.prompts;
-  if (data.delay) $("delay").value = data.delay;
-  if (data.status) $("status").textContent = data.status;
-});
+function addLog(text) {
+  logBox.innerText = `> ${text}\n` + logBox.innerText;
+}
 
 $("start").addEventListener("click", () => {
-  const prompts = $("prompts").value
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const delay = parseInt($("delay").value, 10) || 15;
-
-  if (prompts.length === 0) {
-    $("status").textContent = "Isi minimal satu prompt.";
-    return;
-  }
-
-  chrome.storage.local.set({ prompts, delay });
+  const prompts = $("prompts").value.split("\n").map(s => s.trim()).filter(Boolean);
+  if (prompts.length === 0) return addLog("Error: Prompt kosong.");
+  
+  const config = {
+    delay: parseInt($("delay").value) || 15,
+    mode: $("mode").value
+  };
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
-    if (!tab || !tab.id) {
-      $("status").textContent = "Tab tidak ditemukan.";
-      return;
+    if (!tab || !tab.url.includes("google.com")) {
+      return addLog("Error: Buka halaman Google Flow dulu!");
     }
-    
-    // Kirim perintah ke content.js (tanpa callback agar tidak error)
-    chrome.tabs.sendMessage(tab.id, { 
-      type: "START_QUEUE", 
-      prompts: prompts, 
-      config: { delay: delay, ratio: "16:9", model: "image" }
-    });
 
-    $("status").textContent = `Memproses ${prompts.length} prompt...`;
+    chrome.tabs.sendMessage(tab.id, { type: "START", prompts, config }, () => {
+      if (chrome.runtime.lastError) {
+        addLog("Error: Reload halaman Flow (F5) dulu!");
+      }
+    });
   });
 });
 
 $("stop").addEventListener("click", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0] && tabs[0].id) {
-      chrome.tabs.sendMessage(tabs[0].id, { type: "STOP_QUEUE" });
-    }
+    if (tabs[0]) chrome.tabs.sendMessage(tabs[0].id, { type: "STOP" });
   });
-  $("status").textContent = "Dihentikan.";
-  chrome.storage.local.set({ status: "Dihentikan." });
 });
 
-// Update status dari content.js
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "LOG") {
-    $("status").textContent = msg.text;
-    chrome.storage.local.set({ status: msg.text });
+    addLog(msg.text);
+    if (msg.progress) {
+      progressBar.style.width = `${msg.progress}%`;
+    }
   }
 });
